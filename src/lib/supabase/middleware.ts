@@ -37,10 +37,11 @@ export async function updateSession(request: NextRequest) {
   // Tentukan apakah user sedang berada di halaman auth (login/register)
   const isAuthPage =
     request.nextUrl.pathname.startsWith("/login") ||
-    request.nextUrl.pathname.startsWith("/register");
+    request.nextUrl.pathname.startsWith("/register") ||
+    request.nextUrl.pathname.startsWith("/forgot-password") ||
+    request.nextUrl.pathname.startsWith("/reset-password");
 
-  // Jika user BELUM login dan mencoba mengakses rute selain '/' (misal /dashboard)
-  // Tendang kembali ke halaman /login
+  // Jika user BELUM login dan mencoba mengakses rute selain '/'
   if (!user && !isAuthPage && request.nextUrl.pathname !== "/") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
