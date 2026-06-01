@@ -9,15 +9,32 @@ export async function login(formData: FormData) {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { data: authData, error: authError } =
+    await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-  if (error) {
-    return { error: error.message };
+  if (authError) {
+    return { error: authError.message };
   }
 
-  // Sesuai PRD, setelah login berhasil user diarahkan ke dashboard
+  // Jika login berhasil, cek role di tabel profiles
+  if (authData.user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("auth_user_id", authData.user.id)
+      .single();
+
+    // Arahkan berdasarkan role masing-masing
+    if (profile?.role === "super_admin") {
+      redirect("/admin");
+    } else {
+      redirect("/dashboard");
+    }
+  }
+
+  // Fallback (jika terjadi anomali, lemparkan ke dashboard user)
   redirect("/dashboard");
 }
