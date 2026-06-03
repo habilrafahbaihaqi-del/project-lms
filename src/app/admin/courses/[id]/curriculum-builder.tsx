@@ -10,6 +10,8 @@ import {
   FolderPlus,
   Loader2,
   Trash2,
+  Link2,
+  UploadCloud,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +20,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -36,6 +37,8 @@ import {
   updateLessonsOrder,
   deleteModule,
   deleteLesson,
+  uploadMaterialFile,
+  updateLessonContentUrl,
 } from "../actions";
 
 export default function CurriculumBuilder({ courseId }: { courseId: string }) {
@@ -43,14 +46,22 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
 
+  // State Form Modul
   const [newModuleTitle, setNewModuleTitle] = useState("");
   const [isCreatingModule, setIsCreatingModule] = useState(false);
 
+  // State Form Materi (Lesson)
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [newLessonTitle, setNewLessonTitle] = useState("");
   const [lessonType, setLessonType] = useState<"video" | "pdf">("video");
   const [isCreatingLesson, setIsCreatingLesson] = useState(false);
   const [isLessonDialogOpen, setIsLessonDialogOpen] = useState(false);
+
+  // State untuk Modal Isi Materi (Upload PDF / Input URL Video)
+  const [isContentDialogOpen, setIsContentDialogOpen] = useState(false);
+  const [activeLesson, setActiveLesson] = useState<any>(null);
+  const [contentUrlInput, setContentUrlInput] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -106,7 +117,6 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
     setIsCreatingLesson(false);
   };
 
-  // Fungsi Hapus Modul (Bab)
   const handleDeleteMod = async (id: string) => {
     if (
       confirm(
@@ -123,7 +133,6 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
     }
   };
 
-  // Fungsi Hapus Materi (Lesson)
   const handleDeleteLes = async (id: string) => {
     if (confirm("Hapus materi ini dari kurikulum?")) {
       const res = await deleteLesson(id);
@@ -134,6 +143,59 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
         toast.error("Gagal menghapus materi");
       }
     }
+  };
+
+  // Membuka Modal Isi Materi
+  const openContentDialog = (lesson: any) => {
+    setActiveLesson(lesson);
+    setContentUrlInput(lesson.content_url || "");
+    setIsContentDialogOpen(true);
+  };
+
+  // Menyimpan URL Video secara manual
+  const handleSaveVideoUrl = async () => {
+    setIsUploading(true);
+    const res = await updateLessonContentUrl(activeLesson.id, contentUrlInput);
+    if (res.success) {
+      toast.success("Tautan video berhasil disimpan");
+      setIsContentDialogOpen(false);
+      loadCurriculum();
+    } else {
+      toast.error("Gagal menyimpan tautan");
+    }
+    setIsUploading(false);
+  };
+
+  // Mengunggah File PDF
+  const handleUploadPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      toast.error("Format file harus PDF");
+      return;
+    }
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const uploadRes = await uploadMaterialFile(formData);
+    if (uploadRes.success && uploadRes.url) {
+      // Simpan URL ke database
+      const saveRes = await updateLessonContentUrl(
+        activeLesson.id,
+        uploadRes.url,
+      );
+      if (saveRes.success) {
+        toast.success("File PDF berhasil diunggah & disimpan");
+        setContentUrlInput(uploadRes.url);
+        loadCurriculum();
+      }
+    } else {
+      toast.error("Gagal mengunggah file", { description: uploadRes.error });
+    }
+    setIsUploading(false);
   };
 
   const onDragEnd = async (result: any) => {
@@ -204,6 +266,7 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
 
   return (
     <div className="space-y-6">
+      {/* Form Tambah Modul */}
       <form
         onSubmit={handleAddModule}
         className="flex gap-3 bg-[#111933] p-4 rounded-xl border border-slate-800"
@@ -230,6 +293,7 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
         </Button>
       </form>
 
+      {/* Drag & Drop Area */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-modules" type="MODULE">
           {(provided) => (
@@ -318,7 +382,7 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
                                         <div
                                           ref={innerDraggableProvided.innerRef}
                                           {...innerDraggableProvided.draggableProps}
-                                          className="flex items-center justify-between p-3 bg-[#111933]/50 border border-slate-800/60 rounded-xl hover:border-slate-700/80"
+                                          className="flex items-center justify-between p-3 bg-[#111933]/50 border border-slate-800/60 rounded-xl hover:border-slate-700/80 transition-colors"
                                         >
                                           <div className="flex items-center space-x-3 flex-1">
                                             <div
@@ -341,14 +405,46 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
                                                 />
                                               )}
                                             </div>
-                                            <p className="text-sm text-slate-300 font-medium">
-                                              {lesson.title}
-                                            </p>
+                                            <div className="flex flex-col">
+                                              <p className="text-sm text-slate-300 font-medium">
+                                                {lesson.title}
+                                              </p>
+                                              {/* Indikator Status Konten */}
+                                              {lesson.content_url ? (
+                                                <span className="text-[10px] text-emerald-500 font-medium flex items-center mt-0.5">
+                                                  Berisi Konten ✓
+                                                </span>
+                                              ) : (
+                                                <span className="text-[10px] text-amber-500 font-medium flex items-center mt-0.5">
+                                                  Konten Kosong ⚠️
+                                                </span>
+                                              )}
+                                            </div>
                                           </div>
-                                          <div className="flex items-center space-x-3">
-                                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-500">
+
+                                          <div className="flex items-center space-x-2">
+                                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-500 mr-2">
                                               {lesson.content_type}
                                             </span>
+
+                                            {/* TOMBOL ISI MATERI */}
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() =>
+                                                openContentDialog(lesson)
+                                              }
+                                              className={`h-7 px-2 text-xs border-slate-700 ${lesson.content_url ? "text-blue-400 hover:text-blue-300 bg-blue-900/20" : "text-slate-400 hover:text-white bg-slate-800"}`}
+                                            >
+                                              <Link2
+                                                size={12}
+                                                className="mr-1.5"
+                                              />{" "}
+                                              {lesson.content_url
+                                                ? "Edit"
+                                                : "Isi"}
+                                            </Button>
+
                                             {/* Tombol Hapus Materi */}
                                             <Button
                                               size="icon"
@@ -382,6 +478,7 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
         </Droppable>
       </DragDropContext>
 
+      {/* Modal Tambah Materi (Judul & Tipe) */}
       <Dialog open={isLessonDialogOpen} onOpenChange={setIsLessonDialogOpen}>
         <DialogContent className="bg-[#0b1226] border-slate-800 text-slate-200 sm:max-w-[425px]">
           <DialogHeader>
@@ -437,6 +534,97 @@ export default function CurriculumBuilder({ courseId }: { courseId: string }) {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL BARU: ISI KONTEN (URL VIDEO / UPLOAD PDF) */}
+      <Dialog open={isContentDialogOpen} onOpenChange={setIsContentDialogOpen}>
+        <DialogContent className="bg-[#0b1226] border-slate-800 text-slate-200 sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-heading flex items-center">
+              {activeLesson?.content_type === "video" ? (
+                <FileVideo className="mr-2 text-indigo-400" size={20} />
+              ) : (
+                <FileText className="mr-2 text-emerald-400" size={20} />
+              )}
+              Isi Materi: {activeLesson?.title}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 mt-4">
+            {activeLesson?.content_type === "video" ? (
+              <div className="space-y-3">
+                <label className="text-sm text-slate-300 font-medium">
+                  Tautan Video (YouTube/Vimeo/Drive)
+                </label>
+                <Input
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  value={contentUrlInput}
+                  onChange={(e) => setContentUrlInput(e.target.value)}
+                  disabled={isUploading}
+                  className="bg-slate-900 border-slate-700 text-slate-200 focus-visible:ring-blue-500"
+                />
+                <Button
+                  onClick={handleSaveVideoUrl}
+                  disabled={isUploading || !contentUrlInput.trim()}
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                >
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Simpan Tautan Video"
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <label className="text-sm text-slate-300 font-medium">
+                  Unggah Berkas PDF
+                </label>
+
+                {contentUrlInput && (
+                  <div className="p-3 mb-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center justify-between">
+                    <span className="truncate pr-4">
+                      File sudah terunggah: {contentUrlInput.substring(0, 40)}
+                      ...
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-center w-full">
+                  <label
+                    htmlFor="dropzone-file"
+                    className={`flex flex-col items-center justify-center w-full h-40 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-800/80 transition-colors ${isUploading ? "opacity-50 pointer-events-none" : ""}`}
+                  >
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      {isUploading ? (
+                        <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
+                      ) : (
+                        <UploadCloud className="w-10 h-10 text-slate-500 mb-3" />
+                      )}
+                      <p className="mb-2 text-sm text-slate-400">
+                        <span className="font-semibold text-blue-400">
+                          Klik untuk unggah
+                        </span>{" "}
+                        file PDF
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Maks. ukuran disarankan 10MB
+                      </p>
+                    </div>
+                    <input
+                      id="dropzone-file"
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={handleUploadPdf}
+                      disabled={isUploading}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

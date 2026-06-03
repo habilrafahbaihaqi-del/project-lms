@@ -233,3 +233,44 @@ export async function updateCourseSettings(
   if (error) return { error: error.message };
   return { success: true };
 }
+
+// Mengunggah file PDF ke Supabase Storage
+export async function uploadMaterialFile(formData: FormData) {
+  const supabase = await createClient();
+  const file = formData.get("file") as File;
+
+  if (!file) return { error: "File tidak ditemukan" };
+
+  // Buat nama file unik agar tidak bentrok
+  const fileExt = file.name.split(".").pop();
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+  // Unggah ke bucket 'materials'
+  const { error } = await supabase.storage
+    .from("materials")
+    .upload(fileName, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+  if (error) return { error: error.message };
+
+  // Dapatkan URL publik dari file yang baru diunggah
+  const { data } = supabase.storage.from("materials").getPublicUrl(fileName);
+  return { success: true, url: data.publicUrl };
+}
+
+// Menyimpan URL (Video/PDF) ke dalam tabel lessons
+export async function updateLessonContentUrl(
+  lessonId: string,
+  contentUrl: string,
+) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("lessons")
+    .update({ content_url: contentUrl, updated_at: new Date().toISOString() })
+    .eq("id", lessonId);
+
+  if (error) return { error: error.message };
+  return { success: true };
+}

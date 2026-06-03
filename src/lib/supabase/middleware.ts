@@ -39,8 +39,13 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/forgot-password") ||
     request.nextUrl.pathname.startsWith("/reset-password");
 
-  // Jika belum login dan mencoba masuk ke halaman rahasia, tendang ke login
-  if (!user && !isAuthPage && request.nextUrl.pathname !== "/") {
+  // KUNCI PERBAIKAN: Definisikan rute publik yang bebas diakses siapa saja
+  const isPublicRoute =
+    request.nextUrl.pathname === "/" ||
+    request.nextUrl.pathname.startsWith("/courses");
+
+  // LOGIKA BLOKIR DIPERBARUI: Izinkan jika itu isPublicRoute
+  if (!user && !isAuthPage && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
